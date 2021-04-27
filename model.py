@@ -4,7 +4,7 @@ from ext import pickle_save, pickle_load
 from torch import              \
     (tensor, Tensor,
     zeros, ones, eye, randn,
-    cat, stack,
+    cat, stack, transpose,
     sigmoid, tanh, relu, softmax,
     pow, sqrt,
     abs, sum, norm, mean,
@@ -15,25 +15,30 @@ from torch.nn.init import xavier_normal_
 
 
 def make_model():
-    # todo;
-    pass
+    w = randn(config.in_size+config.state_size,config.state_size, requires_grad=False)
+    return [[w]]
 
 def prop_model(model, state, inp):
-
     with no_grad():
-        # todo;
-        return None
+
+        state = inp @ model[0][0]
+
+        inp_neg = state @ transpose(model[0][0], 0,1)
+        if config.act_fn: inp_neg =  sigmoid(inp_neg) if config.act_fn == 's' else tanh(inp_neg)
+        state_neg = inp_neg @ model[0][0]
+        if config.act_fn: state_neg = sigmoid(state_neg) if config.act_fn == 's' else tanh(state_neg)
+
+        return state, inp_neg, state_neg
 
 
 def empty_state(batch_size=1):
-
-    return zeros(batch_size, config.state_size) if not config.use_gpu else zeros(batch_size, config.state_size).cuda()
+    return zeros(batch_size,config.state_size) if not config.use_gpu else zeros(batch_size, config.state_size).cuda()
 
 
 ##
 
 
-def respond_to(model, sequences, state=None, training_run=True, extra_steps=0):
+def respond_to(model, sequences, state=None):
 
     responses = []
     loss = 0
@@ -42,61 +47,57 @@ def respond_to(model, sequences, state=None, training_run=True, extra_steps=0):
     max_seq_len = max(len(sequence) for sequence in sequences)
     has_remaining = list(range(len(sequences)))
 
-    for t in range(max_seq_len-1):
+    for t in range(max_seq_len):
 
-        has_remaining = [i for i in has_remaining if len(sequences[i][t+1:t+2])]
+        print(f't: {t}')
+
+        has_remaining = [i for i in has_remaining if len(sequences[i][t:t+1])]
 
         inp = stack([sequences[i][t] for i in has_remaining],0)
-        lbl = stack([sequences[i][t+1] for i in has_remaining],0)
         partial_state = stack([state[i] for i in has_remaining],0)
 
-        # print(f't: {t}')
-        # print(f'inp size: {inp.size()}')
-        # print(f'lbl size: {lbl.size()}')
-        # print(f'state size: {partial_state.size()}')
+        inp = cat([partial_state,inp], -1)
 
-        out, partial_state = prop_model(model, partial_state, inp)
+        for i in range(config.hm_epochs_per_t):
 
-        #  print(f'out_size: {out.size()}')
-        # print(f'state_out_size: {partial_state.size()}')
+            # print(f'\ti: {i}')
 
-        loss_t = sequence_loss(lbl, out)
-        for i,l in zip(has_remaining,loss_t):
-            l /= len(sequences[i])
-        loss += sum(loss_t)
+            # print(f'\t\tinp size: {inp.size()}')
+            # print(f'\t\tstate size: {partial_state.size()}')
 
-        responses.append([out[has_remaining.index(i),:] if i in has_remaining else None for i in range(len(sequences))])
+            partial_state, neg_inp, neg_partial_state = prop_model(model, partial_state, inp)
+
+            # print(f'\t\tstate_out_size: {partial_state.size()}')
+            # print(f'\t\tneg_inp_size: {neg_inp.size()}')
+            # print(f'\t\tneg_state_out_size: {neg_partial_state.size()}')
+
+            pos_grad = (transpose(inp.unsqueeze(1), 1,2) * partial_state.unsqueeze(1)).sum(0)
+            neg_grad = (transpose(neg_inp.unsqueeze(1), 1,2) * neg_partial_state.unsqueeze(1)).sum(0)
+
+            grad = -(pos_grad-neg_grad)
+            loss_t_i = pow(inp-neg_inp,2) if config.loss_squared else abs(inp-neg_inp)
+
+            # for i,l,g in zip(has_remaining,loss_t_i,grad):
+            #     l /= len(sequences[i])
+            #     g /= len(sequences[i])
+            model[0][0].grad = grad
+            # loss += sum(loss_t_i)/config.hm_epochs_per_t
+
+            print(f'\tloss_t_i: {sum(loss_t_i)}')
+
+            sgd(model) if config.optimizer == 'sgd' else adaptive_sgd(model)
+
+        loss += sum(loss_t_i)
+
+        print(f'loss_t: {loss_t_i}')
 
         for ii,i in enumerate(has_remaining):
             state[i] = partial_state[ii]
 
-    if training_run:
-
-        loss.backward()
-        return float(loss)
-
-    else:
-        if len(sequences) == 1:
-
-            for t_extra in range(extra_steps):
-
-                out, state = prop_model(model, state, out)
-
-                responses.append(out)
-
-            responses = stack([ee for e in responses for ee in e], dim=0)
-
-        return float(loss), responses
+    return loss
 
 
 ##
-
-
-def sequence_loss(label, out, do_sum=False):
-
-    loss = pow(label-out, 2) if config.loss_squared else abs(label-out)
-
-    return sum(loss) if do_sum else loss
 
 
 def sgd(model, lr=None, batch_size=None):
@@ -107,53 +108,49 @@ def sgd(model, lr=None, batch_size=None):
     with no_grad():
 
         for layer in model:
-            for param in layer[1:]:
-                if param.requires_grad:
+            for param in layer:
 
-                    param.grad /=batch_size
+                param.grad /=batch_size
 
-                    if config.gradient_clip:
-                        param.grad.clamp(min=-config.gradient_clip,max=config.gradient_clip)
+                if config.gradient_clip:
+                    param.grad.clamp(min=-config.gradient_clip,max=config.gradient_clip)
 
-                    param -= lr * param.grad
-                    param.grad = None
+                param -= lr * param.grad
+                param.grad = None
 
 
 moments, variances, ep_nr = [], [], 0
 
 def adaptive_sgd(model, lr=None, batch_size=None,
                  alpha_moment=0.9, alpha_variance=0.999, epsilon=1e-8,
-                 do_moments=True, do_variances=True, do_scaling=False):
+                 do_moments=True, do_variances=True):
 
     if not lr: lr = config.learning_rate
     if not batch_size: batch_size = config.batch_size
 
     global moments, variances, ep_nr
     if not (moments or variances):
-        if do_moments: moments = [[zeros(weight.size()) if not config.use_gpu else zeros(weight.size()).cuda() for weight in layer[1:]] for layer in model]
-        if do_variances: variances = [[zeros(weight.size()) if not config.use_gpu else zeros(weight.size()).cuda() for weight in layer[1:]] for layer in model]
+        if do_moments: moments = [[zeros(weight.size()) if not config.use_gpu else zeros(weight.size()).cuda() for weight in layer] for layer in model]
+        if do_variances: variances = [[zeros(weight.size()) if not config.use_gpu else zeros(weight.size()).cuda() for weight in layer] for layer in model]
 
     ep_nr +=1
 
     with no_grad():
             for _, layer in enumerate(model):
-                for __, param in enumerate(layer[1:]):
-                    if param.requires_grad:
+                for __, param in enumerate(layer):
 
-                        lr_ = lr
-                        param.grad /= batch_size
+                    lr_ = lr
+                    param.grad /= batch_size
 
-                        if do_moments:
-                            moments[_][__] = alpha_moment * moments[_][__] + (1-alpha_moment) * param.grad
-                            moment_hat = moments[_][__] / (1-alpha_moment**(ep_nr+1))
-                        if do_variances:
-                            variances[_][__] = alpha_variance * variances[_][__] + (1-alpha_variance) * param.grad**2
-                            variance_hat = variances[_][__] / (1-alpha_variance**(ep_nr+1))
-                        if do_scaling:
-                            lr_ *= norm(param)/norm(param.grad)
+                    if do_moments:
+                        moments[_][__] = alpha_moment * moments[_][__] + (1-alpha_moment) * param.grad
+                        moment_hat = moments[_][__] / (1-alpha_moment**(ep_nr+1))
+                    if do_variances:
+                        variances[_][__] = alpha_variance * variances[_][__] + (1-alpha_variance) * param.grad**2
+                        variance_hat = variances[_][__] / (1-alpha_variance**(ep_nr+1))
 
-                        param -= lr_ * (moment_hat if do_moments else param.grad) / ((sqrt(variance_hat)+epsilon) if do_variances else 1)
-                        param.grad = None
+                    param -= lr_ * (moment_hat if do_moments else param.grad) / ((sqrt(variance_hat)+epsilon) if do_variances else 1)
+                    param.grad = None
 
 
 ##
@@ -212,13 +209,12 @@ class TorchModel(Module):
     def __init__(self, model):
         super(TorchModel, self).__init__()
         for layer_i, layer in enumerate(model):
-            for param_i,param in enumerate(layer[1:]):
+            for param_i,param in enumerate(layer):
                 if type(param) != Parameter:
                     param = Parameter(param)
                 setattr(self,f'layer{layer_i}_param{param_i}',param)
-            setattr(self,f'act{layer_i}',layer[0])
 
-            model[layer_i] = [getattr(self, f'act{layer_i}')] + list(getattr(self, f'layer{layer_i}_param{param_i}') for param_i in range(len(model[layer_i])-1))
+            model[layer_i] = list(getattr(self, f'layer{layer_i}_param{param_i}') for param_i in range(len(model[layer_i])))
         self.model = model
 
     def forward(self, states, inp):
@@ -226,4 +222,4 @@ class TorchModel(Module):
 
 
 def pull_copy_from_gpu(model):
-    return [[layer[0]]+list(weight.detach().cpu() for weight in layer[1:]) for layer in model]
+    return [list(weight.detach().cpu() for weight in layer) for layer in model]

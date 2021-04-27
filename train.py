@@ -65,8 +65,6 @@ def main(disp_text=True):
 
             loss += respond_to(model, batch)
 
-            sgd(model) if config.optimizer == 'sgd' else adaptive_sgd(model)
-
         loss /= len(data)
 
         if not one_batch: loss = dev_loss(model, data)

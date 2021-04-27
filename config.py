@@ -17,7 +17,7 @@ timestep_size = 12
 in_size = timestep_size
 out_size = timestep_size
 
-state_size = 2**8
+state_size = in_size//4
 
 act_fn = 's'
 
@@ -26,13 +26,16 @@ init_xavier = False
 
 ## train params
 
-learning_rate = 1e-3
+loss_squared = False
+
+learning_rate = 1e-1
 
 max_seq_len = 0
 
 batch_size = 0
 gradient_clip = 0
 hm_epochs = 100
+hm_epochs_per_t = 100
 optimizer = 'custom'
 
 model_path = 'models/model'

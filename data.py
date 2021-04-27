@@ -289,17 +289,22 @@ def load_data(path=None):
         return data
 
 
-def split_data(data, dev_ratio=config.dev_ratio, do_shuffle=False):
+def split_data(data, dev_ratio=None, do_shuffle=False):
+    if not dev_ratio: dev_ratio = config.dev_ratio
     if do_shuffle: shuffle(data)
-    hm_train = ceil(len(data) * (1 - dev_ratio))
-    data_dev = data[hm_train:]
-    data = data[:hm_train]
-    return data, data_dev
+    if dev_ratio:
+        hm_train = int(len(data)*(1-dev_ratio))
+        data_dev = data[hm_train:]
+        data = data[:hm_train]
+        return data, data_dev
+    else:
+        return data, []
 
-def batchify_data(data, batch_size=config.batch_size, do_shuffle=True):
+def batchify_data(data, batch_size=None, do_shuffle=True):
+    if not batch_size: batch_size = config.batch_size
     if do_shuffle: shuffle(data)
-    hm_batches = int(len(data) / batch_size)
-    return [data[i * batch_size:(i + 1) * batch_size] for i in range(hm_batches)] \
+    hm_batches = int(len(data)/batch_size)
+    return [data[i*batch_size:(i+1)*batch_size] for i in range(hm_batches)] \
         if hm_batches else [data]
 
 
