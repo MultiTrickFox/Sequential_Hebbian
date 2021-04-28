@@ -22,7 +22,7 @@ def prop_model(model, state, inp):
     with no_grad():
 
         state = inp @ model[0][0]
-
+        if config.act_fn: state = sigmoid(state) if config.act_fn == 's' else tanh(state)
         inp_neg = state @ transpose(model[0][0], 0,1)
         if config.act_fn: inp_neg =  sigmoid(inp_neg) if config.act_fn == 's' else tanh(inp_neg)
         state_neg = inp_neg @ model[0][0]
@@ -49,7 +49,7 @@ def respond_to(model, sequences, state=None):
 
     for t in range(max_seq_len):
 
-        print(f't: {t}')
+        #print(f't: {t}')
 
         has_remaining = [i for i in has_remaining if len(sequences[i][t:t+1])]
 
@@ -83,13 +83,13 @@ def respond_to(model, sequences, state=None):
             model[0][0].grad = grad
             # loss += sum(loss_t_i)/config.hm_epochs_per_t
 
-            print(f'\tloss_t_i: {sum(loss_t_i)}')
+            #print(f'\tloss_t_i: {sum(loss_t_i)}')
 
             sgd(model) if config.optimizer == 'sgd' else adaptive_sgd(model)
 
         loss += sum(loss_t_i)
 
-        print(f'loss_t: {loss_t_i}')
+        #print(f'loss_t: {sum(loss_t_i)}')
 
         for ii,i in enumerate(has_remaining):
             state[i] = partial_state[ii]
