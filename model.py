@@ -15,18 +15,24 @@ from torch.nn.init import xavier_normal_
 
 
 def make_model():
+
     w = randn(config.in_size+config.state_size,config.state_size, requires_grad=False)
     return [[w]]
 
-def prop_model(model, state, inp):
+def prop_model(model, inp):
+
+    act_fn = None if not config.act_fn else (sigmoid if config.act_fn=='s' else tanh)
+
     with no_grad():
 
         state = inp @ model[0][0]
-        if config.act_fn: state = sigmoid(state) if config.act_fn == 's' else tanh(state)
+        if act_fn: state = act_fn(state)
+
         inp_neg = state @ transpose(model[0][0], 0,1)
-        if config.act_fn: inp_neg =  sigmoid(inp_neg) if config.act_fn == 's' else tanh(inp_neg)
+        if act_fn: inp_neg = act_fn(inp_neg)
+
         state_neg = inp_neg @ model[0][0]
-        if config.act_fn: state_neg = sigmoid(state_neg) if config.act_fn == 's' else tanh(state_neg)
+        if act_fn: state_neg = act_fn(state_neg)
 
         return state, inp_neg, state_neg
 
@@ -40,7 +46,6 @@ def empty_state(batch_size=1):
 
 def respond_to(model, sequences, state=None):
 
-    responses = []
     loss = 0
     state = empty_state(len(sequences)) if not state else state
 
@@ -49,7 +54,7 @@ def respond_to(model, sequences, state=None):
 
     for t in range(max_seq_len):
 
-        #print(f't: {t}')
+        print(f't: {t}')
 
         has_remaining = [i for i in has_remaining if len(sequences[i][t:t+1])]
 
@@ -60,16 +65,9 @@ def respond_to(model, sequences, state=None):
 
         for i in range(config.hm_epochs_per_t):
 
-            # print(f'\ti: {i}')
+            print(f'\ti: {i}')
 
-            # print(f'\t\tinp size: {inp.size()}')
-            # print(f'\t\tstate size: {partial_state.size()}')
-
-            partial_state, neg_inp, neg_partial_state = prop_model(model, partial_state, inp)
-
-            # print(f'\t\tstate_out_size: {partial_state.size()}')
-            # print(f'\t\tneg_inp_size: {neg_inp.size()}')
-            # print(f'\t\tneg_state_out_size: {neg_partial_state.size()}')
+            partial_state, neg_inp, neg_partial_state = prop_model(model, inp)
 
             pos_grad = (transpose(inp.unsqueeze(1), 1,2) * partial_state.unsqueeze(1)).sum(0)
             neg_grad = (transpose(neg_inp.unsqueeze(1), 1,2) * neg_partial_state.unsqueeze(1)).sum(0)
@@ -83,13 +81,13 @@ def respond_to(model, sequences, state=None):
             model[0][0].grad = grad
             # loss += sum(loss_t_i)/config.hm_epochs_per_t
 
-            #print(f'\tloss_t_i: {sum(loss_t_i)}')
+            input(f'\tloss_t_i: {sum(loss_t_i)}')
 
             sgd(model) if config.optimizer == 'sgd' else adaptive_sgd(model)
 
         loss += sum(loss_t_i)
 
-        #print(f'loss_t: {sum(loss_t_i)}')
+        input(f'loss_t: {sum(loss_t_i)}')
 
         for ii,i in enumerate(has_remaining):
             state[i] = partial_state[ii]
