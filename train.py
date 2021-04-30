@@ -79,17 +79,17 @@ def main(disp_text=True):
     if one_batch: data_losss.append(dev_loss(model, data))
 
     if disp_text: print(f'training ended @ {now()} \nfinal losses: {data_losss[-1]}, {dev_losss[-1] if config.dev_ratio else ""}', flush=True)
-    show(plot(data_losss))
-    if config.dev_ratio:
-        show(plot(dev_losss))
-    if not config.fresh_model: show(plot(config.all_losses))
+    # show(plot(data_losss))
+    # if config.dev_ratio:
+    #     show(plot(dev_losss))
+    # if not config.fresh_model: show(plot(config.all_losses))
 
     return model, [data_losss, dev_losss]
 
 
 def dev_loss(model, batch):
     with no_grad():
-        loss,_ = respond_to(model, batch, training_run=False)
+        loss = respond_to(model, batch)
     return loss /len(batch)
 
 

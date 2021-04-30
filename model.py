@@ -44,55 +44,81 @@ def empty_state(batch_size=1):
 ##
 
 
-def respond_to(model, sequences, state=None):
+def respond_to(model, sequences, state=None, training_run=True, extra_steps=0):
 
-    loss = 0
-    state = empty_state(len(sequences)) if not state else state
+    if training_run:
 
-    max_seq_len = max(len(sequence) for sequence in sequences)
-    has_remaining = list(range(len(sequences)))
+        loss = 0
+        state = empty_state(len(sequences)) if not state else state
 
-    for t in range(max_seq_len):
+        max_seq_len = max(len(sequence) for sequence in sequences)
+        has_remaining = list(range(len(sequences)))
 
-        print(f't: {t}')
+        for t in range(max_seq_len):
 
-        has_remaining = [i for i in has_remaining if len(sequences[i][t:t+1])]
+            #print(f't: {t}')
 
-        inp = stack([sequences[i][t] for i in has_remaining],0)
-        partial_state = stack([state[i] for i in has_remaining],0)
+            has_remaining = [i for i in has_remaining if len(sequences[i][t:t+1])]
 
-        inp = cat([partial_state,inp], -1)
+            inp = stack([sequences[i][t] for i in has_remaining],0)
+            partial_state = stack([state[i] for i in has_remaining],0)
 
-        for i in range(config.hm_epochs_per_t):
+            inp = cat([inp,partial_state], -1)
 
-            print(f'\ti: {i}')
+            for i in range(config.max_epochs_per_t):
 
-            partial_state, neg_inp, neg_partial_state = prop_model(model, inp)
+                #print(f'\ti: {i}')
 
-            pos_grad = (transpose(inp.unsqueeze(1), 1,2) * partial_state.unsqueeze(1)).sum(0)
-            neg_grad = (transpose(neg_inp.unsqueeze(1), 1,2) * neg_partial_state.unsqueeze(1)).sum(0)
+                partial_state, neg_inp, neg_partial_state = prop_model(model, inp)
 
-            grad = -(pos_grad-neg_grad)
-            loss_t_i = pow(inp-neg_inp,2) if config.loss_squared else abs(inp-neg_inp)
+                pos_grad = (transpose(inp.unsqueeze(1), 1,2) * partial_state.unsqueeze(1)).sum(0)
+                neg_grad = (transpose(neg_inp.unsqueeze(1), 1,2) * neg_partial_state.unsqueeze(1)).sum(0)
 
-            # for i,l,g in zip(has_remaining,loss_t_i,grad):
-            #     l /= len(sequences[i])
-            #     g /= len(sequences[i])
-            model[0][0].grad = grad
-            # loss += sum(loss_t_i)/config.hm_epochs_per_t
+                grad = -(pos_grad-neg_grad)
+                loss_t_i = pow(inp-neg_inp,2) if config.loss_squared else abs(inp-neg_inp)
 
-            input(f'\tloss_t_i: {sum(loss_t_i)}')
+                # for i,l,g in zip(has_remaining,loss_t_i,grad):
+                #     l /= len(sequences[i])
+                #     g /= len(sequences[i])
+                model[0][0].grad = grad
+                # loss += sum(loss_t_i)/config.hm_epochs_per_t
 
-            sgd(model) if config.optimizer == 'sgd' else adaptive_sgd(model)
+                input(f'\tloss_t_i: {sum(loss_t_i)}')
 
-        loss += sum(loss_t_i)
+                sgd(model) if config.optimizer == 'sgd' else adaptive_sgd(model)
 
-        input(f'loss_t: {sum(loss_t_i)}')
+            loss += sum(loss_t_i)
 
-        for ii,i in enumerate(has_remaining):
-            state[i] = partial_state[ii]
+            print(f'loss_t: {sum(loss_t_i)}')
 
-    return loss
+            for ii,i in enumerate(has_remaining):
+                state[i] = partial_state[ii]
+
+        return loss
+
+    else:
+
+        state = empty_state(1) if not state else state
+
+        for timestep in sequences[0]:
+            inp = cat([timestep.unsqueeze(0),state], -1)
+            state, _,_ = prop_model(model, inp)
+
+        response = []
+
+        act_fn = None if not config.act_fn else (sigmoid if config.act_fn == 's' else tanh)
+
+        for t in range(extra_steps):
+
+            inp = state @ transpose(model[0][0], 0, 1)
+            if act_fn: inp = act_fn(inp)
+
+            out = inp[...,:config.in_size]
+            state = inp[...,config.in_size:]
+
+            response.append(out)
+
+        return response
 
 
 ##

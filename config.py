@@ -28,14 +28,14 @@ init_xavier = False
 
 loss_squared = False
 
-learning_rate = 1e-1
+learning_rate = 1e-2
 
-max_seq_len = 0
+max_seq_len = 10
 
 batch_size = 0
 gradient_clip = 0
-hm_epochs = 100
-hm_epochs_per_t = 100
+hm_epochs = 1
+max_epochs_per_t = 1000
 optimizer = 'custom'
 
 model_path = 'models/model'
@@ -49,6 +49,8 @@ all_losses = []
 
 
 ## interact params
+
+pick_threshold = .2
 
 hm_extra_steps = 100
 
