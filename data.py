@@ -51,36 +51,33 @@ note_reverse_dict = {
     12: 'R'
 }
 
-empty_vector = [0 for _ in range(config.in_size)]
+empty_vector_single_oct = [0 for _ in range(12+1)]
+empty_vector_multi_oct = [0 for _ in range(12*(config.max_octave-config.min_octave+1)+1)]
 
 
 ##
 
 
 def preprocess():
+
     data = []
-
-    raw_files = glob(config.data_path + "/**/*.mid*") + glob(config.data_path + "/**/*.MID*") + glob(
-        config.data_path + "/*.mid*") + glob(config.data_path + "/*.MID*")
-
+    raw_files = sorted(glob(config.data_path+"/**/*.mid*")+glob(config.data_path+"/**/*.MID*")+glob(config.data_path+"/*.mid*")+glob(config.data_path+"/*.MID*"))
     print(f'files to read: {len(raw_files)}')
 
     for i, raw_file in enumerate(raw_files):
+        #try:
+        data.extend(preprocess_file(raw_file))
+        #except Exception as e: print(f'ERROR: {raw_file} failed, {e}')
 
-        try:
-            data.extend(preprocess_file(raw_file))
-        except Exception as e:
-            print(f'ERROR: {raw_file} failed, {e}')
-
-        if (i + 1) % 50 == 0:
-            print(f'>> {i + 1}/{len(raw_files)}')
-
+        if (i+1)%50==0: print(f'>> {i+1}/{len(raw_files)}')
     print(f'>> obtained total of {len(data)} sequences.')
+    print(f'>> with lengths of {[len(seq[0]) for seq in data]}.')
 
     return data
 
 
 def preprocess_file(raw_file):
+
     print(f'> processing file {raw_file}')
 
     ## remove drums
@@ -96,13 +93,11 @@ def preprocess_file(raw_file):
     sample = converter.parse(raw_file)
 
     parts = instrument.partitionByInstrument(sample)
-    if not parts:
-        parts = [sample.flat]
+    if not parts: parts = [sample.flat]
 
-    try:
-        time_signatures = [int(part.timeSignature.ratioString[0]) for part in parts]
+    try: time_signatures = [int(part.timeSignature.ratioString[0]) for part in parts]
     except:
-        print('WARNING: time signature failed, check the file')
+        print('WARNING: time signature failed, check the file.')
         time_signatures = [4 for _ in range(len(parts))]
 
     ## convert parts
@@ -118,11 +113,8 @@ def preprocess_file(raw_file):
             try:
                 assert element.beat
                 assert element.duration
-
                 add_to_sequence(converted_sequence, element)
-
-            except:
-                pass
+            except: pass
 
         converted_sequences.append(converted_sequence)
 
@@ -131,12 +123,11 @@ def preprocess_file(raw_file):
     if config.combine_instrus:
 
         combined_converted_sequence = []
-
         max_len = max([len(part) for part in converted_sequences])
 
         for part in converted_sequences:
             if len(part) != max_len:
-                for _ in range(max_len - len(part)):
+                for _ in range(max_len-len(part)):
                     part.append([])
 
         for t in range(max_len):
@@ -147,20 +138,15 @@ def preprocess_file(raw_file):
 
         converted_sequences = [combined_converted_sequence]
 
-    ## finalize
+    ## finalize vectors
 
     converted_sequences = [[normalize_vector(vectorize_timestep(timestep)) for timestep in
                             trim_empty_timesteps(converted_sequence, time_signature)]
                            for converted_sequence, time_signature in zip(converted_sequences, time_signatures)]
 
     # for converted_sequence, time_signature in zip(converted_sequences, time_signatures):
-    #     # if input('Show stream? (y/n): ').lower() == 'y':
-    #     # from numpy.random import rand
-    #     # if rand() <= .5:
-    #         from interact import convert_to_stream
-    #         sequence_string = [''.join(f'{note_reverse_dict[i]},' for i, element in enumerate(timestep) if element > 0)[:-1] for timestep in converted_sequence]
-    #         convert_to_stream(sequence_string).show()
-    #         input('Halt..')
+    #     if input('Show stream? (y/n): ').lower() == 'y':
+    #         convert_to_stream([''.join(f'{note_reverse_dict[i%12]}{int(i/12)+config.min_octave},' if i!=len(timestep)-1 else 'R,' for i, element in enumerate(timestep) if element > 0)[:-1] for timestep in converted_sequence]).show()
 
     return zip(converted_sequences, time_signatures)
 
@@ -169,73 +155,67 @@ def preprocess_file(raw_file):
 
 
 def add_to_sequence(converted_sequence, element):
+
     if isinstance(element, note.Note):
         vector = vectorize_element(element)
         starting_group = round(element.offset * config.beat_resolution)
         ending_group = int(element.duration.quarterLength * config.beat_resolution)
         if ending_group == 0: ending_group = 1
         for group in range(ending_group):
-            converted_sequence[starting_group + group].append(vector)
+            converted_sequence[starting_group+group].append(vector)
 
     elif isinstance(element, chord.Chord):
-        starting_group = round(
-            element.offset * config.beat_resolution)  # normally this should've acted on "for each e in chord", thank you music21..
+        starting_group = round(element.offset * config.beat_resolution)  # normally this should've acted on "for each e in chord", thank you music21..
         ending_group = int(element.duration.quarterLength * config.beat_resolution)
         if ending_group == 0: ending_group = 1
         for e in element:
             vector = vectorize_element(e)
             for group in range(ending_group):
-                converted_sequence[starting_group + group].append(vector)
+                converted_sequence[starting_group+group].append(vector)
 
 
 ##
 
 
 def vectorize_element(element):
-    vector = empty_vector.copy()
-    vector[note_dict[element.pitch.name]] += 1
+
+    note = element.pitch.name
+    oct = element.octave
+
+    if oct<config.min_octave: oct = config.min_octave
+    elif oct>config.max_octave: oct = config.max_octave
+
+    vector = empty_vector_multi_oct.copy()
+    vector[(oct-config.min_octave)*12 + note_dict[note]] += 1
+
+    #input(vector)
 
     return vector
 
 
 def vectorize_timestep(timestep):
-    vec = empty_vector.copy()
 
-    if config.polyphony:
+    vec = empty_vector_multi_oct.copy()
 
-        for vector in timestep:
-            for i, v in enumerate(vector):
-                vec[i] += v
+    for vector in timestep:
+        for i, v in enumerate(vector):
+            vec[i] += v
 
-    else:
-
-        counts = {}
-
-        for vector in timestep:
-            counts[str(vector)] = 0.0
-        for vector in timestep:
-            counts[str(vector)] += 1
-
-        if counts:
-            max_val = max(list(counts.values()))
-            for k, v in counts:
-                if v == max_val:
-                    vec[k] += 1
-
-    if vec == empty_vector:
-        vec[-1] += 1
+    if not sum(vec): vec[-1] += 1
 
     return vec
 
 
 def normalize_vector(vector):
-    return [e / sum(vector) for e in vector]
+
+    return [e/sum(vector) for e in vector]
 
 
 ##
 
 
 def trim_empty_timesteps(converted_sequence, time_signature):
+
     trim_groups_of = time_signature * config.beat_resolution
 
     trim_from_start = 0
@@ -283,9 +263,56 @@ def load_data(path=None):
     if path[-3:] != '.pk': path += '.pk'
     data = pickle_load(path)
     if data:
-        for i, (sequence, time_sig) in enumerate(data):
-            data[i] = ([tensor(t,dtype=float32) for t in sequence]) #, time_sig)
-            # todo : append to data the time_sig & current step ?
+        for d_index, (sequence, time_sig) in enumerate(data):
+
+            d = []
+
+            for timestep in sequence:
+
+                if not config.polyphony:
+
+                    vec =  empty_vector_multi_oct.copy()
+
+                    if config.monophony_mode == 'l':
+                        for i,e in zip(range(len(timestep)-1),timestep[:-1]):
+                            if e>0:
+                                vec[i] = 1
+                                break
+
+                    elif config.monophony_mode == 'h':
+                        for i,e in zip(reversed(range(len(timestep)-1)),reversed(timestep[:-1])):
+                            if e>0:
+                                vec[i] = 1
+                                break
+
+                    else: vec[timestep.index(max(timestep))] = 1
+
+                    if sum(vec)==0: vec[-1] = 1
+
+                    timestep = vec
+
+                if not config.multi_octave:
+
+                    vec = empty_vector_single_oct.copy()
+                    vec[-1] = timestep[-1]
+
+                    for i,e in enumerate(timestep[:-1]):
+                        if e>0:
+                            vec[i%12] += e
+
+                    timestep = vec
+
+                timestep = tensor(normalize_vector(timestep), dtype=float32)
+
+                if config.act_fn=='t': timestep = timestep*2-1
+
+                d.append(timestep)
+
+            data[d_index] = d
+
+            if input('Show stream? (y/n): ').lower() == 'y':
+                convert_to_stream([''.join(f'{note_reverse_dict[i%12]}{int(i/12)+config.min_octave},' if i!=len(timestep)-1 else 'R,' for i, element in enumerate(timestep) if element>0)[:-1] for timestep in d]).show()
+
         return data
 
 
@@ -312,13 +339,12 @@ def batchify_data(data, batch_size=None, do_shuffle=True):
 
 
 def convert_to_stream(track):
+
     track = [timestep.split(',') for timestep in track]
 
     music_stream = stream.Stream()
     music_stream.timeSignature = meter.TimeSignature(f'4/4')
-    music_stream.insert(0, metadata.Metadata(
-        title='vanilla ai',
-        composer=f'sent from {config.model_path}'))
+    music_stream.insert(0, metadata.Metadata(title='vanilla ai', composer=f'sent from {config.model_path}'))
 
     for i, timestep in enumerate(track):
 
@@ -328,7 +354,7 @@ def convert_to_stream(track):
 
             sustain = 1
 
-            for other_timestep in track[i + 1:]:
+            for other_timestep in track[i+1:]:
 
                 sustains_to_other = False
 
@@ -348,17 +374,17 @@ def convert_to_stream(track):
                     break
 
             if note_name != 'R':
-                n = note.Note(note_name + '4');
-                n.duration.quarterLength *= sustain / config.beat_resolution
+                n = note.Note(note_name);
+                n.duration.quarterLength *= sustain/config.beat_resolution
                 c.add(n)
             else:
                 n = note.Rest();
-                n.duration.quarterLength *= sustain / config.beat_resolution
+                n.duration.quarterLength *= sustain/config.beat_resolution
 
             # n.storedInstrument = instrument.Piano()
-            n.offset = i / config.beat_resolution
+            n.offset = i/config.beat_resolution
             music_stream.append(n)
-            n.offset = i / config.beat_resolution
+            n.offset = i/config.beat_resolution
             # n.storedInstrument = instrument.Piano()
 
     return music_stream

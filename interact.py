@@ -19,7 +19,7 @@ def main():
     for i,seq in enumerate(d):
 
         from model import respond_to
-        seq = respond_to(model, [seq], training_run=False, extra_steps=config.hm_extra_steps)
+        seq = respond_to(model, seq)
         seq = [t.detach() for t in seq]
         if config.use_gpu:
             seq = [t.cpu() for t in seq]
@@ -27,11 +27,13 @@ def main():
 
         from data import note_reverse_dict, convert_to_stream
         seq_converted = []
-        for t in seq:
+        for timestep in seq:
+            if config.act_fn=='t': timestep = (timestep+1)/2
             t_converted = ''
-            for i,e in enumerate(t[0]):
+            for i,e in enumerate(timestep[0]):
                 if e>config.pick_threshold:
-                    t_converted += note_reverse_dict[i]+','
+                    t_converted += note_reverse_dict[i%12]+(int(i/12)+config.min_octave) if i!=config.out_size-1 else 'R'
+                    t_converted += ','
             t_converted = t_converted[:-1]
             seq_converted.append(t_converted)
         convert_to_stream(seq_converted).show()

@@ -2,7 +2,11 @@
 ## data params
 
 combine_instrus = True
-polyphony = True
+min_octave = 3
+max_octave = 5
+multi_octave = True
+polyphony = False
+monophony_mode = 'h' # 'l':lowest, 'h':highest, 'm':most
 
 beat_resolution = 4
 
@@ -12,12 +16,11 @@ dev_ratio = 0
 
 ## model params
 
-timestep_size = 12
+timestep_size = 12+1 if not multi_octave else 12*(max_octave-min_octave+1)+1
 
 in_size = timestep_size
+state_size = 2**4
 out_size = timestep_size
-
-state_size = in_size//4
 
 act_fn = 's'
 
@@ -51,17 +54,15 @@ all_losses = []
 ## interact params
 
 pick_threshold = .2
-
 hm_extra_steps = 100
-
 hm_output_file = 1
-
 output_file = 'resp'
 
 
 ##
 
-config_to_save = ['beat_resolution',
+config_to_save = ['beat_resolution', 'min_octave', 'max_octave', 'multi_octave', 'polyphony',
+                  'timestep_size', 'in_size', 'out_size',
                   'state_size', 'act_fn',
                   'all_losses',
                  ]
