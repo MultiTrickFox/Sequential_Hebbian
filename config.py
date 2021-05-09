@@ -1,14 +1,15 @@
 
 ## data params
 
+    ## pre process
+beat_resolution = 4
 combine_instrus = True
 min_octave = 3
 max_octave = 5
+    ## post process
 multi_octave = True
 polyphony = False
 monophony_mode = 'h' # 'l':lowest, 'h':highest, 'm':most
-
-beat_resolution = 4
 
 data_path = 'data'
 dev_ratio = 0
@@ -31,7 +32,7 @@ init_xavier = False
 
 loss_squared = False
 
-learning_rate = 1e-2
+learning_rate = 1e-1
 
 max_seq_len = 10
 

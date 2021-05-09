@@ -16,25 +16,32 @@ from torch.nn.init import xavier_normal_
 
 def make_model():
 
-    w = randn(config.in_size+config.state_size,config.state_size, requires_grad=False)
-    return [[w]]
+    w0 = randn(config.in_size+config.state_size,config.state_size, requires_grad=False)
+    w1 = randn(config.state_size,config.out_size, requires_grad=False)
 
-def prop_model(model, inp):
+    if config.init_xavier and config.act_fn:
+        xavier_normal_(w0, 5/3 if config.act_fn=='t' else 1)
+        xavier_normal_(w0, 5/3 if config.act_fn=='t' else 1)
+
+    return [[w0,w1]]
+
+
+def prop_model(model, inp, layer=None):
 
     act_fn = None if not config.act_fn else (sigmoid if config.act_fn=='s' else tanh)
 
     with no_grad():
 
-        state = inp @ model[0][0]
-        if act_fn: state = act_fn(state)
+        if layer is None:
+            state = inp @ model[0][0] if not act_fn else act_fn(inp @ model[0][0])
+            out = state @ model[0][1] if not act_fn else act_fn(state @ model[0][1])
+            return state, out
 
-        inp_neg = state @ transpose(model[0][0], 0,1)
-        if act_fn: inp_neg = act_fn(inp_neg)
-
-        state_neg = inp_neg @ model[0][0]
-        if act_fn: state_neg = act_fn(state_neg)
-
-        return state, inp_neg, state_neg
+        else:
+            result = inp @ model[0][layer] if not act_fn else act_fn(inp @ model[0][layer])
+            inp_neg = result @ transpose(model[0][layer], 0, 1) if not act_fn else act_fn(result @ transpose(model[0][layer], 0, 1))
+            result_neg = inp_neg @ model[0][layer] if not act_fn else act_fn(inp_neg @ model[0][layer])
+            return result, inp_neg, result_neg
 
 
 def empty_state(batch_size=1):
@@ -44,81 +51,67 @@ def empty_state(batch_size=1):
 ##
 
 
-def respond_to(model, sequences, state=None, training_run=True, extra_steps=0):
+def train_on(model, sequences, init_state=None):
 
-    if training_run:
+    loss = 0
+    init_state = empty_state(len(sequences)) if not init_state else init_state
 
-        loss = 0
-        state = empty_state(len(sequences)) if not state else state
+    for t in range(config.max_seq_len):
+        input(f't: {t}')
 
-        max_seq_len = max(len(sequence) for sequence in sequences)
-        has_remaining = list(range(len(sequences)))
+        for i in range(config.max_epochs_per_t):
+            disp_text = i%(config.max_epochs_per_t//10)==0
+            disp_losses = []
 
-        for t in range(max_seq_len):
+            state = init_state
+            pos_grad, neg_grad = 0, 0
+            model[0][0].grad = zeros(model[0][0].size())
 
-            #print(f't: {t}')
+            for tt in range(t+1):
 
-            has_remaining = [i for i in has_remaining if len(sequences[i][t:t+1])]
+                inp = cat([stack([sequence[tt] for sequence in sequences],0),state],-1)
+                state, inp_neg, state_neg = prop_model(model,inp,layer=0)
 
-            inp = stack([sequences[i][t] for i in has_remaining],0)
-            partial_state = stack([state[i] for i in has_remaining],0)
+                pos_grad += (transpose(inp.unsqueeze(1), 1, 2) * state.unsqueeze(1)).sum(0)
+                neg_grad += (transpose(inp_neg.unsqueeze(1), 1, 2) * state_neg.unsqueeze(1)).sum(0)
 
-            inp = cat([inp,partial_state], -1)
+                model[0][0].grad += neg_grad-pos_grad
+                loss_t_i = pow(inp-inp_neg,2) if config.loss_squared else abs(inp-inp_neg)
 
-            for i in range(config.max_epochs_per_t):
+                loss += sum(loss_t_i)
 
-                #print(f'\ti: {i}')
+                if disp_text: disp_losses.append(float(sum(loss_t_i)))
 
-                partial_state, neg_inp, neg_partial_state = prop_model(model, inp)
+            if disp_text: print(f'\tloss_{i}: {disp_losses}')
 
-                pos_grad = (transpose(inp.unsqueeze(1), 1,2) * partial_state.unsqueeze(1)).sum(0)
-                neg_grad = (transpose(neg_inp.unsqueeze(1), 1,2) * neg_partial_state.unsqueeze(1)).sum(0)
+            model[0][0].grad /= (t+1)
 
-                grad = -(pos_grad-neg_grad)
-                loss_t_i = pow(inp-neg_inp,2) if config.loss_squared else abs(inp-neg_inp)
+            sgd(model) if config.optimizer == 'sgd' else adaptive_sgd(model)
 
-                # for i,l,g in zip(has_remaining,loss_t_i,grad):
-                #     l /= len(sequences[i])
-                #     g /= len(sequences[i])
-                model[0][0].grad = grad
-                # loss += sum(loss_t_i)/config.hm_epochs_per_t
 
-                input(f'\tloss_t_i: {sum(loss_t_i)}')
+    return loss
 
-                sgd(model) if config.optimizer == 'sgd' else adaptive_sgd(model)
 
-            loss += sum(loss_t_i)
+def respond_to(model, sequence, state=None):
 
-            print(f'loss_t: {sum(loss_t_i)}')
+    state = empty_state(1) if not state else state
 
-            for ii,i in enumerate(has_remaining):
-                state[i] = partial_state[ii]
+    for timestep in sequence:
 
-        return loss
+        inp = cat([timestep.unsqueeze(0),state], -1)
+        state, _,_ = prop_model(model, inp, layer=0)
 
-    else:
+    out = prop_model(model, state, layer=1)
 
-        state = empty_state(1) if not state else state
+    response = [out]
 
-        for timestep in sequences[0]:
-            inp = cat([timestep.unsqueeze(0),state], -1)
-            state, _,_ = prop_model(model, inp)
+    for t in range(config.hm_extra_steps-1):
 
-        response = []
+        inp = cat([out,state], -1)
+        state, out = prop_model(model, inp)
+        response.append(out)
 
-        act_fn = None if not config.act_fn else (sigmoid if config.act_fn == 's' else tanh)
-
-        for t in range(extra_steps):
-
-            inp = state @ transpose(model[0][0], 0, 1)
-            if act_fn: inp = act_fn(inp)
-
-            out = inp[...,:config.in_size]
-            state = inp[...,config.in_size:]
-
-            response.append(out)
-
-        return response
+    return response
 
 
 ##
@@ -133,14 +126,15 @@ def sgd(model, lr=None, batch_size=None):
 
         for layer in model:
             for param in layer:
+                if param.grad is not None:
 
-                param.grad /=batch_size
+                    param.grad /=batch_size
 
-                if config.gradient_clip:
-                    param.grad.clamp(min=-config.gradient_clip,max=config.gradient_clip)
+                    if config.gradient_clip:
+                        param.grad.clamp(min=-config.gradient_clip,max=config.gradient_clip)
 
-                param -= lr * param.grad
-                param.grad = None
+                    param -= lr * param.grad
+                    param.grad = None
 
 
 moments, variances, ep_nr = [], [], 0
@@ -162,19 +156,20 @@ def adaptive_sgd(model, lr=None, batch_size=None,
     with no_grad():
             for _, layer in enumerate(model):
                 for __, param in enumerate(layer):
+                    if param.grad is not None:
 
-                    lr_ = lr
-                    param.grad /= batch_size
+                        lr_ = lr
+                        param.grad /= batch_size
 
-                    if do_moments:
-                        moments[_][__] = alpha_moment * moments[_][__] + (1-alpha_moment) * param.grad
-                        moment_hat = moments[_][__] / (1-alpha_moment**(ep_nr+1))
-                    if do_variances:
-                        variances[_][__] = alpha_variance * variances[_][__] + (1-alpha_variance) * param.grad**2
-                        variance_hat = variances[_][__] / (1-alpha_variance**(ep_nr+1))
+                        if do_moments:
+                            moments[_][__] = alpha_moment * moments[_][__] + (1-alpha_moment) * param.grad
+                            moment_hat = moments[_][__] / (1-alpha_moment**(ep_nr+1))
+                        if do_variances:
+                            variances[_][__] = alpha_variance * variances[_][__] + (1-alpha_variance) * param.grad**2
+                            variance_hat = variances[_][__] / (1-alpha_variance**(ep_nr+1))
 
-                    param -= lr_ * (moment_hat if do_moments else param.grad) / ((sqrt(variance_hat)+epsilon) if do_variances else 1)
-                    param.grad = None
+                        param -= lr_ * (moment_hat if do_moments else param.grad) / ((sqrt(variance_hat)+epsilon) if do_variances else 1)
+                        param.grad = None
 
 
 ##

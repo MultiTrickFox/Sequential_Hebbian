@@ -1,20 +1,15 @@
 import config
-
 from ext import pickle_save, pickle_load
 
 from glob import glob
 
 from pretty_midi import PrettyMIDI
-
 from music21 import *
 
 from torch import tensor, float32
 
 from random import shuffle
 
-from math import ceil
-
-from copy import deepcopy
 
 ##
 
@@ -109,14 +104,14 @@ def preprocess_file(raw_file):
         converted_sequence = [[] for _ in range(len(part.makeMeasures()) * time_signature * config.beat_resolution)]
 
         for element in part.flat:
-
             try:
                 assert element.beat
                 assert element.duration
                 add_to_sequence(converted_sequence, element)
             except: pass
 
-        converted_sequences.append(converted_sequence)
+        if len(converted_sequence):
+            converted_sequences.append(converted_sequence)
 
     ## combine parts
 
@@ -145,8 +140,7 @@ def preprocess_file(raw_file):
                            for converted_sequence, time_signature in zip(converted_sequences, time_signatures)]
 
     # for converted_sequence, time_signature in zip(converted_sequences, time_signatures):
-    #     if input('Show stream? (y/n): ').lower() == 'y':
-    #         convert_to_stream([''.join(f'{note_reverse_dict[i%12]}{int(i/12)+config.min_octave},' if i!=len(timestep)-1 else 'R,' for i, element in enumerate(timestep) if element > 0)[:-1] for timestep in converted_sequence]).show()
+    #     if input('Show stream? (y/n): ').lower() == 'y': convert_to_stream([''.join(f'{note_reverse_dict[i%12]}{int(i/12)+config.min_octave},' if i!=len(timestep)-1 else 'R,' for i, element in enumerate(timestep) if element > 0)[:-1] for timestep in converted_sequence]).show()
 
     return zip(converted_sequences, time_signatures)
 
@@ -188,8 +182,6 @@ def vectorize_element(element):
     vector = empty_vector_multi_oct.copy()
     vector[(oct-config.min_octave)*12 + note_dict[note]] += 1
 
-    #input(vector)
-
     return vector
 
 
@@ -207,7 +199,6 @@ def vectorize_timestep(timestep):
 
 
 def normalize_vector(vector):
-
     return [e/sum(vector) for e in vector]
 
 
@@ -310,8 +301,8 @@ def load_data(path=None):
 
             data[d_index] = d
 
-            if input('Show stream? (y/n): ').lower() == 'y':
-                convert_to_stream([''.join(f'{note_reverse_dict[i%12]}{int(i/12)+config.min_octave},' if i!=len(timestep)-1 else 'R,' for i, element in enumerate(timestep) if element>0)[:-1] for timestep in d]).show()
+            # if input(f'Show stream {d_index}? (y/n): ').lower() == 'y':
+            #     convert_to_stream([''.join(f'{note_reverse_dict[i%12]}{int(i/12)+config.min_octave},' if i!=len(timestep)-1 else 'R,' for i, element in enumerate(timestep) if element>0)[:-1] for timestep in d]).show()
 
         return data
 
@@ -395,11 +386,6 @@ def convert_to_stream(track):
 
 def main():
     save_data(preprocess())
-    # path = config.data_path
-    # if path[-3:] != '.pk': path += '.pk'
-    # prev_data = pickle_load(path)
-    # if prev_data: print('> appending data to prev file')
-    # save_data(preprocess() + (prev_data if prev_data else []))
 
 
 if __name__ == '__main__':

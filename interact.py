@@ -3,7 +3,7 @@ def main():
     import config
 
     from model import load_model
-    model = load_model()
+    model = load_model(config.model_path+'_final')
     while not model:
         config.model_path = input('valid model: ')
         model = load_model()
