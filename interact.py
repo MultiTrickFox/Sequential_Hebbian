@@ -14,7 +14,8 @@ def main():
 
     # from random import shuffle
     # shuffle(d)
-    d = d[:config.hm_output_file]
+    #d = d[:config.hm_output_file]
+    d = [d[5]]
 
     for i,seq in enumerate(d):
 
@@ -25,18 +26,18 @@ def main():
             seq = [t.cpu() for t in seq]
         seq = [t.numpy() for t in seq]
 
-        from data import note_reverse_dict, convert_to_stream
+        from data import note_reverse_dict, convert_to_midi
         seq_converted = []
         for timestep in seq:
             if config.act_fn=='t': timestep = (timestep+1)/2
             t_converted = ''
             for i,e in enumerate(timestep[0]):
                 if e>config.pick_threshold:
-                    t_converted += note_reverse_dict[i%12]+(int(i/12)+config.min_octave) if i!=config.out_size-1 else 'R'
+                    t_converted += note_reverse_dict[i%12]+str(int(i/12)+config.min_octave) if i!=config.out_size-1 else 'R'
                     t_converted += ','
-            t_converted = t_converted[:-1]
+            t_converted = t_converted[:-1] if len(t_converted) else 'R'
             seq_converted.append(t_converted)
-        convert_to_stream(seq_converted).show()
+        convert_to_midi(seq_converted).show()
 
 if __name__ == '__main__':
     main()

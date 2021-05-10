@@ -16,17 +16,17 @@ from torch.nn.init import xavier_normal_
 
 def make_model():
 
-    w0 = randn(config.in_size+config.state_size,config.state_size, requires_grad=False)
-    w1 = randn(config.state_size,config.out_size, requires_grad=False)
+    w0 = randn(config.in_size+config.state_size,config.state_size, requires_grad=False, dtype=float32)
+    w1 = randn(config.state_size,config.out_size, requires_grad=False, dtype=float32)
 
     if config.init_xavier and config.act_fn:
         xavier_normal_(w0, 5/3 if config.act_fn=='t' else 1)
         xavier_normal_(w0, 5/3 if config.act_fn=='t' else 1)
 
-    return [[w0,w1]]
+    return [[w0],[w1]]
 
 
-def prop_model(model, inp, layer=None):
+def prop_model(model, inp, layer=None, do_grad=False):
 
     act_fn = None if not config.act_fn else (sigmoid if config.act_fn=='s' else tanh)
 
@@ -34,14 +34,17 @@ def prop_model(model, inp, layer=None):
 
         if layer is None:
             state = inp @ model[0][0] if not act_fn else act_fn(inp @ model[0][0])
-            out = state @ model[0][1] if not act_fn else act_fn(state @ model[0][1])
+            out = state @ model[1][0] if not act_fn else act_fn(state @ model[1][0])
             return state, out
 
         else:
-            result = inp @ model[0][layer] if not act_fn else act_fn(inp @ model[0][layer])
-            inp_neg = result @ transpose(model[0][layer], 0, 1) if not act_fn else act_fn(result @ transpose(model[0][layer], 0, 1))
-            result_neg = inp_neg @ model[0][layer] if not act_fn else act_fn(inp_neg @ model[0][layer])
-            return result, inp_neg, result_neg
+            result = inp @ model[layer][0] if not act_fn else act_fn(inp @ model[layer][0])
+
+            if do_grad:
+                inp_neg = result @ transpose(model[0][layer], 0, 1) if not act_fn else act_fn(result @ transpose(model[0][layer], 0, 1))
+                result_neg = inp_neg @ model[0][layer] if not act_fn else act_fn(inp_neg @ model[0][layer])
+                return result, inp_neg, result_neg
+            else: return result
 
 
 def empty_state(batch_size=1):
@@ -53,43 +56,66 @@ def empty_state(batch_size=1):
 
 def train_on(model, sequences, init_state=None):
 
-    loss = 0
     init_state = empty_state(len(sequences)) if not init_state else init_state
 
-    for t in range(config.max_seq_len):
-        input(f't: {t}')
 
-        for i in range(config.max_epochs_per_t):
-            disp_text = i%(config.max_epochs_per_t//10)==0
+    print('-- training L0 --')
+
+
+    for t in range(config.max_seq_len):
+        print(f't: {t}')
+
+        for i in range(config.hm_epochs_per_t):
+            disp_text = i%(config.hm_epochs_per_t//10)==0
             disp_losses = []
 
-            state = init_state
-            pos_grad, neg_grad = 0, 0
             model[0][0].grad = zeros(model[0][0].size())
+            state = init_state
 
             for tt in range(t+1):
 
                 inp = cat([stack([sequence[tt] for sequence in sequences],0),state],-1)
-                state, inp_neg, state_neg = prop_model(model,inp,layer=0)
+                state, inp_neg, state_neg = prop_model(model, inp, layer=0, do_grad=True)
 
-                pos_grad += (transpose(inp.unsqueeze(1), 1, 2) * state.unsqueeze(1)).sum(0)
-                neg_grad += (transpose(inp_neg.unsqueeze(1), 1, 2) * state_neg.unsqueeze(1)).sum(0)
-
+                pos_grad = (transpose(inp.unsqueeze(1), 1, 2) * state.unsqueeze(1)).sum(0)
+                neg_grad = (transpose(inp_neg.unsqueeze(1), 1, 2) * state_neg.unsqueeze(1)).sum(0)
                 model[0][0].grad += neg_grad-pos_grad
-                loss_t_i = pow(inp-inp_neg,2) if config.loss_squared else abs(inp-inp_neg)
 
-                loss += sum(loss_t_i)
-
-                if disp_text: disp_losses.append(float(sum(loss_t_i)))
-
+                if disp_text: disp_losses.append(float(sum(pow(inp-inp_neg,2) if config.loss_squared else abs(inp-inp_neg))))
             if disp_text: print(f'\tloss_{i}: {disp_losses}')
 
             model[0][0].grad /= (t+1)
-
             sgd(model) if config.optimizer == 'sgd' else adaptive_sgd(model)
 
 
-    return loss
+    print('-- training L1 --')
+
+
+    states = [init_state]
+    for t in range(config.max_seq_len-1):
+        states.append(prop_model(model, cat([stack([sequence[t] for sequence in sequences],0),states[-1]],-1), layer=0, do_grad=False))
+    states = cat(states[1:],0)
+
+    lbls = []
+    for t in range(1,config.max_seq_len):
+        lbls.append(stack([sequence[t] for sequence in sequences],0))
+    lbls = cat(lbls,0)
+
+    for i in range(config.hm_epochs_per_t):
+        disp_text = i%(config.hm_epochs_per_t//10)==0
+
+        outs = prop_model(model, states, layer=1, do_grad=False)
+
+        loss = lbls-outs
+        pos_grad = (transpose(states.unsqueeze(1), 1, 2) * loss.unsqueeze(1)).sum(0)
+        model[1][0].grad = -pos_grad/(config.max_seq_len-1)
+
+        if disp_text: print(f'\tloss_{i}: {float(sum(loss))}')
+
+        sgd(model) if config.optimizer == 'sgd' else adaptive_sgd(model)
+
+
+ ##
 
 
 def respond_to(model, sequence, state=None):
@@ -99,7 +125,7 @@ def respond_to(model, sequence, state=None):
     for timestep in sequence:
 
         inp = cat([timestep.unsqueeze(0),state], -1)
-        state, _,_ = prop_model(model, inp, layer=0)
+        state = prop_model(model, inp, layer=0)
 
     out = prop_model(model, state, layer=1)
 
@@ -148,8 +174,8 @@ def adaptive_sgd(model, lr=None, batch_size=None,
 
     global moments, variances, ep_nr
     if not (moments or variances):
-        if do_moments: moments = [[zeros(weight.size()) if not config.use_gpu else zeros(weight.size()).cuda() for weight in layer] for layer in model]
-        if do_variances: variances = [[zeros(weight.size()) if not config.use_gpu else zeros(weight.size()).cuda() for weight in layer] for layer in model]
+        if do_moments: moments = [[zeros(weight.size(), dtype=float32) if not config.use_gpu else zeros(weight.size(), dtype=float32).cuda() for weight in layer] for layer in model]
+        if do_variances: variances = [[zeros(weight.size(), dtype=float32) if not config.use_gpu else zeros(weight.size(), dtype=float32).cuda() for weight in layer] for layer in model]
 
     ep_nr +=1
 

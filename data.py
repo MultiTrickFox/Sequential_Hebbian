@@ -57,16 +57,15 @@ def preprocess():
 
     data = []
     raw_files = sorted(glob(config.data_path+"/**/*.mid*")+glob(config.data_path+"/**/*.MID*")+glob(config.data_path+"/*.mid*")+glob(config.data_path+"/*.MID*"))
-    print(f'files to read: {len(raw_files)}')
 
     for i, raw_file in enumerate(raw_files):
-        #try:
-        data.extend(preprocess_file(raw_file))
-        #except Exception as e: print(f'ERROR: {raw_file} failed, {e}')
+        try:
+            data.extend(preprocess_file(raw_file))
+        except Exception as e: print(f'ERROR: {raw_file} failed, {e}')
 
-        if (i+1)%50==0: print(f'>> {i+1}/{len(raw_files)}')
+        if (i+1)%10==0: print(f'>> {i+1}/{len(raw_files)}')
     print(f'>> obtained total of {len(data)} sequences.')
-    print(f'>> with lengths of {[len(seq[0]) for seq in data]}.')
+    print(f'>> with sequence lengths of {[len(seq[0]) for seq in data]}.')
 
     return data
 
@@ -329,7 +328,7 @@ def batchify_data(data, batch_size=None, do_shuffle=True):
 ##
 
 
-def convert_to_stream(track):
+def convert_to_midi(track):
 
     track = [timestep.split(',') for timestep in track]
 

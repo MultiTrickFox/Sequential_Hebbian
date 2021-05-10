@@ -39,7 +39,7 @@ max_seq_len = 10
 batch_size = 0
 gradient_clip = 0
 hm_epochs = 1
-max_epochs_per_t = 1000
+hm_epochs_per_t = 1000
 optimizer = 'custom'
 
 model_path = 'models/model'
@@ -49,13 +49,11 @@ ckp_per_ep = hm_epochs//10
 
 use_gpu = False
 
-all_losses = []
-
 
 ## interact params
 
 pick_threshold = .2
-hm_extra_steps = 100
+hm_extra_steps = beat_resolution*4*2
 hm_output_file = 1
 output_file = 'resp'
 
@@ -63,8 +61,6 @@ output_file = 'resp'
 ##
 
 config_to_save = ['beat_resolution', 'min_octave', 'max_octave', 'multi_octave', 'polyphony',
-                  'timestep_size', 'in_size', 'out_size',
-                  'state_size', 'act_fn',
-                  'all_losses',
+                  'timestep_size', 'in_size', 'out_size', 'state_size', 'act_fn',
                  ]
 
