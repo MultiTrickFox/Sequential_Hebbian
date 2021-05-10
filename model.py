@@ -17,7 +17,7 @@ from torch.nn.init import xavier_normal_
 def make_model():
 
     w0 = randn(config.in_size+config.state_size,config.state_size, requires_grad=False, dtype=float32)
-    w1 = randn(config.state_size,config.out_size, requires_grad=False, dtype=float32)
+    w1 = randn(config.in_size+config.state_size,config.out_size, requires_grad=False, dtype=float32)
 
     if config.init_xavier and config.act_fn:
         xavier_normal_(w0, 5/3 if config.act_fn=='t' else 1)
@@ -34,7 +34,7 @@ def prop_model(model, inp, layer=None, do_grad=False):
 
         if layer is None:
             state = inp @ model[0][0] if not act_fn else act_fn(inp @ model[0][0])
-            out = state @ model[1][0] if not act_fn else act_fn(state @ model[1][0])
+            out = inp @ model[1][0] if not act_fn else act_fn(inp @ model[1][0])
             return state, out
 
         else:
@@ -92,9 +92,12 @@ def train_on(model, sequences, init_state=None):
 
 
     states = [init_state]
+    inps = []
     for t in range(config.max_seq_len-1):
-        states.append(prop_model(model, cat([stack([sequence[t] for sequence in sequences],0),states[-1]],-1), layer=0, do_grad=False))
-    states = cat(states[1:],0)
+        inp = cat([stack([sequence[t] for sequence in sequences],0),states[-1]],-1)
+        inps.append(inp)
+        states.append(prop_model(model, inp, layer=0, do_grad=False))
+    inps = cat(inps,0)
 
     lbls = []
     for t in range(1,config.max_seq_len):
@@ -104,10 +107,10 @@ def train_on(model, sequences, init_state=None):
     for i in range(config.hm_epochs_per_t):
         disp_text = i%(config.hm_epochs_per_t//10)==0
 
-        outs = prop_model(model, states, layer=1, do_grad=False)
+        outs = prop_model(model, inps, layer=1, do_grad=False)
 
         loss = lbls-outs
-        pos_grad = (transpose(states.unsqueeze(1), 1, 2) * loss.unsqueeze(1)).sum(0)
+        pos_grad = (transpose(inps.unsqueeze(1), 1, 2) * loss.unsqueeze(1)).sum(0)
         model[1][0].grad = -pos_grad/(config.max_seq_len-1)
 
         if disp_text: print(f'\tloss_{i}: {float(sum(loss))}')
@@ -125,9 +128,7 @@ def respond_to(model, sequence, state=None):
     for timestep in sequence:
 
         inp = cat([timestep.unsqueeze(0),state], -1)
-        state = prop_model(model, inp, layer=0)
-
-    out = prop_model(model, state, layer=1)
+        state, out = prop_model(model, inp)
 
     response = [out]
 

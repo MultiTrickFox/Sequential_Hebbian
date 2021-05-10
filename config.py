@@ -20,7 +20,7 @@ dev_ratio = 0
 timestep_size = 12+1 if not multi_octave else 12*(max_octave-min_octave+1)+1
 
 in_size = timestep_size
-state_size = 2**4
+state_size = 2**6
 out_size = timestep_size
 
 act_fn = 's'
@@ -52,10 +52,9 @@ use_gpu = False
 
 ## interact params
 
-pick_threshold = .2
+pick_threshold = 1/((max_octave-min_octave+1)*12+1) if multi_octave else 1/13
 hm_extra_steps = beat_resolution*4*2
 hm_output_file = 1
-output_file = 'resp'
 
 
 ##
