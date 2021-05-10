@@ -15,7 +15,7 @@ def main():
     # from random import shuffle
     # shuffle(d)
     #d = d[:config.hm_output_file]
-    d = [d[5]]
+    d = [d[14]]
 
     for i,seq in enumerate(d):
 

@@ -139,7 +139,7 @@ def preprocess_file(raw_file):
                            for converted_sequence, time_signature in zip(converted_sequences, time_signatures)]
 
     # for converted_sequence, time_signature in zip(converted_sequences, time_signatures):
-    #     if input('Show stream? (y/n): ').lower() == 'y': convert_to_stream([''.join(f'{note_reverse_dict[i%12]}{int(i/12)+config.min_octave},' if i!=len(timestep)-1 else 'R,' for i, element in enumerate(timestep) if element > 0)[:-1] for timestep in converted_sequence]).show()
+    #     if input('Show stream? (y/n): ').lower() == 'y': convert_to_midi([''.join(f'{note_reverse_dict[i%12]}{int(i/12)+config.min_octave},' if i!=len(timestep)-1 else 'R,' for i, element in enumerate(timestep) if element > 0)[:-1] for timestep in converted_sequence]).show()
 
     return zip(converted_sequences, time_signatures)
 
@@ -301,7 +301,7 @@ def load_data(path=None):
             data[d_index] = d
 
             # if input(f'Show stream {d_index}? (y/n): ').lower() == 'y':
-            #     convert_to_stream([''.join(f'{note_reverse_dict[i%12]}{int(i/12)+config.min_octave},' if i!=len(timestep)-1 else 'R,' for i, element in enumerate(timestep) if element>0)[:-1] for timestep in d]).show()
+            #     convert_to_midi([''.join(f'{note_reverse_dict[i%12]}{int(i/12)+config.min_octave},' if i!=len(timestep)-1 else 'R,' for i, element in enumerate(timestep) if element>0)[:-1] for timestep in d]).show()
 
         return data
 

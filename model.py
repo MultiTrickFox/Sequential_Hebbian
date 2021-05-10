@@ -41,8 +41,8 @@ def prop_model(model, inp, layer=None, do_grad=False):
             result = inp @ model[layer][0] if not act_fn else act_fn(inp @ model[layer][0])
 
             if do_grad:
-                inp_neg = result @ transpose(model[0][layer], 0, 1) if not act_fn else act_fn(result @ transpose(model[0][layer], 0, 1))
-                result_neg = inp_neg @ model[0][layer] if not act_fn else act_fn(inp_neg @ model[0][layer])
+                inp_neg = result @ transpose(model[layer][0], 0, 1) if not act_fn else act_fn(result @ transpose(model[layer][0], 0, 1))
+                result_neg = inp_neg @ model[layer][0] if not act_fn else act_fn(inp_neg @ model[layer][0])
                 return result, inp_neg, result_neg
             else: return result
 
