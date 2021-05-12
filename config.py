@@ -20,7 +20,7 @@ dev_ratio = 0
 timestep_size = 12+1 if not multi_octave else 12*(max_octave-min_octave+1)+1
 
 in_size = timestep_size
-state_size = 2**6
+state_size = 2**5
 out_size = timestep_size
 
 act_fn = 's'
@@ -34,7 +34,7 @@ loss_squared = False
 
 learning_rate = 1e-1
 
-max_seq_len = 10
+max_seq_len = 20
 
 batch_size = 0
 gradient_clip = 0

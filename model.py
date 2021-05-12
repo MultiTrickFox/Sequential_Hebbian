@@ -26,7 +26,7 @@ def make_model():
     return [[w0],[w1]]
 
 
-def prop_model(model, inp, layer=None, do_grad=False):
+def prop_model(model, inp, layer=None, do_negative=False):
 
     act_fn = None if not config.act_fn else (sigmoid if config.act_fn=='s' else tanh)
 
@@ -40,7 +40,7 @@ def prop_model(model, inp, layer=None, do_grad=False):
         else:
             result = inp @ model[layer][0] if not act_fn else act_fn(inp @ model[layer][0])
 
-            if do_grad:
+            if do_negative:
                 inp_neg = result @ transpose(model[layer][0], 0, 1) if not act_fn else act_fn(result @ transpose(model[layer][0], 0, 1))
                 result_neg = inp_neg @ model[layer][0] if not act_fn else act_fn(inp_neg @ model[layer][0])
                 return result, inp_neg, result_neg
@@ -75,7 +75,7 @@ def train_on(model, sequences, init_state=None):
             for tt in range(t+1):
 
                 inp = cat([stack([sequence[tt] for sequence in sequences],0),state],-1)
-                state, inp_neg, state_neg = prop_model(model, inp, layer=0, do_grad=True)
+                state, inp_neg, state_neg = prop_model(model, inp, layer=0, do_negative=True)
 
                 pos_grad = (transpose(inp.unsqueeze(1), 1, 2) * state.unsqueeze(1)).sum(0)
                 neg_grad = (transpose(inp_neg.unsqueeze(1), 1, 2) * state_neg.unsqueeze(1)).sum(0)
@@ -85,7 +85,7 @@ def train_on(model, sequences, init_state=None):
             if disp_text: print(f'\tloss_{i}: {disp_losses}')
 
             model[0][0].grad /= (t+1)
-            sgd(model) if config.optimizer == 'sgd' else adaptive_sgd(model)
+            sgd(model) if config.optimizer == 'sgd' else adaptive_sgd(model, ep_nr=i)
 
 
     print('-- training L1 --')
@@ -94,9 +94,8 @@ def train_on(model, sequences, init_state=None):
     states = [init_state]
     inps = []
     for t in range(config.max_seq_len-1):
-        inp = cat([stack([sequence[t] for sequence in sequences],0),states[-1]],-1)
-        inps.append(inp)
-        states.append(prop_model(model, inp, layer=0, do_grad=False))
+        inps.append(cat([stack([sequence[t] for sequence in sequences],0),states[-1]],-1))
+        states.append(prop_model(model, inps[-1], layer=0))
     inps = cat(inps,0)
 
     lbls = []
@@ -107,7 +106,7 @@ def train_on(model, sequences, init_state=None):
     for i in range(config.hm_epochs_per_t):
         disp_text = i%(config.hm_epochs_per_t//10)==0
 
-        outs = prop_model(model, inps, layer=1, do_grad=False)
+        outs = prop_model(model, inps, layer=1)
 
         loss = lbls-outs
         pos_grad = (transpose(inps.unsqueeze(1), 1, 2) * loss.unsqueeze(1)).sum(0)
@@ -115,7 +114,7 @@ def train_on(model, sequences, init_state=None):
 
         if disp_text: print(f'\tloss_{i}: {float(sum(loss))}')
 
-        sgd(model) if config.optimizer == 'sgd' else adaptive_sgd(model)
+        sgd(model) if config.optimizer == 'sgd' else adaptive_sgd(model, ep_nr=i)
 
 
  ##
@@ -164,21 +163,18 @@ def sgd(model, lr=None, batch_size=None):
                     param.grad = None
 
 
-moments, variances, ep_nr = [], [], 0
+moments, variances = [], []
 
 def adaptive_sgd(model, lr=None, batch_size=None,
                  alpha_moment=0.9, alpha_variance=0.999, epsilon=1e-8,
-                 do_moments=True, do_variances=True):
+                 do_moments=True, do_variances=True, ep_nr=0):
 
     if not lr: lr = config.learning_rate
     if not batch_size: batch_size = config.batch_size
 
-    global moments, variances, ep_nr
-    if not (moments or variances):
-        if do_moments: moments = [[zeros(weight.size(), dtype=float32) if not config.use_gpu else zeros(weight.size(), dtype=float32).cuda() for weight in layer] for layer in model]
-        if do_variances: variances = [[zeros(weight.size(), dtype=float32) if not config.use_gpu else zeros(weight.size(), dtype=float32).cuda() for weight in layer] for layer in model]
-
-    ep_nr +=1
+    global moments, variances
+    if do_moments and not moments: moments = [[zeros(weight.size(), dtype=float32) if not config.use_gpu else zeros(weight.size(), dtype=float32).cuda() for weight in layer] for layer in model]
+    if do_variances and not variances: variances = [[zeros(weight.size(), dtype=float32) if not config.use_gpu else zeros(weight.size(), dtype=float32).cuda() for weight in layer] for layer in model]
 
     with no_grad():
             for _, layer in enumerate(model):
@@ -214,7 +210,6 @@ def save_model(model, path=None):
         model = pull_copy_from_gpu(model)
     else:
         meta = [moments, variances]
-    meta.append(ep_nr)
     configs = [[field,getattr(config,field)] for field in dir(config) if field in config.config_to_save]
     pickle_save([model,meta,configs],path)
 
@@ -228,11 +223,11 @@ def load_model(path=None, fresh_meta=None):
         model, meta, configs = obj
         if config.use_gpu:
             TorchModel(model).cuda()
-        global moments, variances, ep_nr
+        global moments, variances
         if fresh_meta:
-            moments, variances, ep_nr = [], [], 0
+            moments, variances = [], []
         else:
-            moments, variances, ep_nr = meta
+            moments, variances = meta
             if config.use_gpu:
                 moments = [[e2.cuda() for e2 in e1] for e1 in moments]
                 variances = [[e2.cuda() for e2 in e1] for e1 in variances]

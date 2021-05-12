@@ -296,7 +296,7 @@ def load_data(path=None):
 
                 if config.act_fn=='t': timestep = timestep*2-1
 
-                d.append(timestep)
+                d.append(timestep if not config.use_gpu else timestep.cuda())
 
             data[d_index] = d
 

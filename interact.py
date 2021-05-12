@@ -15,12 +15,13 @@ def main():
     # from random import shuffle
     # shuffle(d)
     #d = d[:config.hm_output_file]
-    d = [d[14]]
+    d = [d[8]] # [8,10,13,14]]
+    config.polyphony = True
 
     for i,seq in enumerate(d):
 
         from model import respond_to
-        seq = respond_to(model, seq)
+        seq = respond_to(model, seq[:1])
         seq = [t.detach() for t in seq]
         if config.use_gpu:
             seq = [t.cpu() for t in seq]
@@ -30,12 +31,16 @@ def main():
         seq_converted = []
         for timestep in seq:
             if config.act_fn=='t': timestep = (timestep+1)/2
-            t_converted = ''
-            for i,e in enumerate(timestep[0]):
-                if e>config.pick_threshold:
-                    t_converted += note_reverse_dict[i%12]+str(int(i/12)+config.min_octave) if i!=config.out_size-1 else 'R'
-                    t_converted += ','
-            t_converted = t_converted[:-1] if len(t_converted) else 'R'
+            if config.polyphony:
+                t_converted = ''
+                for i,e in enumerate(timestep[0]):
+                    if e>config.pick_threshold:
+                        t_converted += note_reverse_dict[i%12]+str(int(i/12)+config.min_octave) if i!=config.out_size-1 else 'R'
+                        t_converted += ','
+                t_converted = t_converted[:-1] if len(t_converted) else 'R'
+            else:
+                i = timestep[0].argmax()
+                t_converted = note_reverse_dict[i%12]+str(int(i/12)+config.min_octave)
             seq_converted.append(t_converted)
         convert_to_midi(seq_converted).show()
 
