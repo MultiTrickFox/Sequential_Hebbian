@@ -16,7 +16,7 @@ def main():
     # shuffle(d)
     #d = d[:config.hm_output_file]
     d = [d[8]] # [8,10,13,14]]
-    config.polyphony = True
+    config.polyphony = False
 
     for i,seq in enumerate(d):
 
@@ -30,7 +30,6 @@ def main():
         from data import note_reverse_dict, convert_to_midi
         seq_converted = []
         for timestep in seq:
-            if config.act_fn=='t': timestep = (timestep+1)/2
             if config.polyphony:
                 t_converted = ''
                 for i,e in enumerate(timestep[0]):

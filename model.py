@@ -19,30 +19,24 @@ def make_model():
     w0 = randn(config.in_size+config.state_size,config.state_size, requires_grad=False, dtype=float32)
     w1 = randn(config.in_size+config.state_size,config.out_size, requires_grad=False, dtype=float32)
 
-    if config.init_xavier and config.act_fn:
-        xavier_normal_(w0, 5/3 if config.act_fn=='t' else 1)
-        xavier_normal_(w0, 5/3 if config.act_fn=='t' else 1)
-
     return [[w0],[w1]]
 
 
 def prop_model(model, inp, layer=None, do_negative=False):
 
-    act_fn = None if not config.act_fn else (sigmoid if config.act_fn=='s' else tanh)
-
     with no_grad():
 
         if layer is None:
-            state = inp @ model[0][0] if not act_fn else act_fn(inp @ model[0][0])
-            out = inp @ model[1][0] if not act_fn else act_fn(inp @ model[1][0])
+            state = sigmoid(inp @ model[0][0])
+            out = sigmoid(inp @ model[1][0])
             return state, out
 
         else:
-            result = inp @ model[layer][0] if not act_fn else act_fn(inp @ model[layer][0])
+            result = sigmoid(inp @ model[layer][0])
 
             if do_negative:
-                inp_neg = result @ transpose(model[layer][0], 0, 1) if not act_fn else act_fn(result @ transpose(model[layer][0], 0, 1))
-                result_neg = inp_neg @ model[layer][0] if not act_fn else act_fn(inp_neg @ model[layer][0])
+                inp_neg = sigmoid(result @ transpose(model[layer][0],0,1))
+                result_neg = sigmoid(inp_neg @ model[layer][0])
                 return result, inp_neg, result_neg
             else: return result
 
@@ -81,11 +75,11 @@ def train_on(model, sequences, init_state=None):
                 neg_grad = (transpose(inp_neg.unsqueeze(1), 1, 2) * state_neg.unsqueeze(1)).sum(0)
                 model[0][0].grad += neg_grad-pos_grad
 
-                if disp_text: disp_losses.append(float(sum(pow(inp-inp_neg,2) if config.loss_squared else abs(inp-inp_neg))))
+                if disp_text: disp_losses.append(float(sum(inp-inp_neg)))
             if disp_text: print(f'\tloss_{i}: {disp_losses}')
 
             model[0][0].grad /= (t+1)
-            sgd(model) if config.optimizer == 'sgd' else adaptive_sgd(model, ep_nr=i)
+            sgd(model) if config.optimizer == 'sgd' else adaptive_sgd(model)
 
 
     print('-- training L1 --')
@@ -114,7 +108,7 @@ def train_on(model, sequences, init_state=None):
 
         if disp_text: print(f'\tloss_{i}: {float(sum(loss))}')
 
-        sgd(model) if config.optimizer == 'sgd' else adaptive_sgd(model, ep_nr=i)
+        sgd(model) if config.optimizer == 'sgd' else adaptive_sgd(model)
 
 
  ##
@@ -149,17 +143,10 @@ def sgd(model, lr=None, batch_size=None):
     if not batch_size: batch_size = config.batch_size
 
     with no_grad():
-
         for layer in model:
             for param in layer:
                 if param.grad is not None:
-
-                    param.grad /=batch_size
-
-                    if config.gradient_clip:
-                        param.grad.clamp(min=-config.gradient_clip,max=config.gradient_clip)
-
-                    param -= lr * param.grad
+                    param -= lr * param.grad / batch_size
                     param.grad = None
 
 
