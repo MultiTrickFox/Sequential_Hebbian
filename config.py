@@ -45,7 +45,7 @@ use_gpu = False
 ## interact params
 
 pick_threshold = 1/((max_octave-min_octave+1)*12+1) if multi_octave else 1/13
-hm_extra_steps = beat_resolution*4*2
+hm_extra_steps = beat_resolution*4 *2
 hm_output_file = 1
 
 

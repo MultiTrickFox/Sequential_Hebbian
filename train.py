@@ -13,21 +13,20 @@ def main(disp_text=True):
         config.all_losses = []
         save_model(make_model())
         model = load_model()
-        if disp_text: print('created model.', end=' ')
+        if disp_text: print('created model.')
     else:
         model = load_model()
         if not model:
             save_model(make_model())
             model = load_model()
-            if disp_text: print('created model.', end=' ')
+            if disp_text: print('created model.')
         else:
-            if disp_text: print('loaded model.', end=' ')
+            if disp_text: print('loaded model.')
 
     data = load_data()
     data, data_dev = split_data(data)
 
     data = [d for i,d in enumerate(data) if i in [8,10,13,14]]
-    print()
     seq_lens = [len(d) for d in data]
     print(f'seq lens: {seq_lens}')
     min_seq_len = min(seq_lens)

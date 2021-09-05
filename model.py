@@ -7,7 +7,7 @@ from torch import              \
     cat, stack, transpose,
     sigmoid, tanh, relu, softmax,
     pow, sqrt,
-    abs, sum, norm, mean,
+    abs, sum, norm, mean, min, max,
     float32, no_grad)
 from torch.nn.init import xavier_normal_
 
@@ -75,11 +75,12 @@ def train_on(model, sequences, init_state=None):
                 neg_grad = (transpose(inp_neg.unsqueeze(1), 1, 2) * state_neg.unsqueeze(1)).sum(0)
                 model[0][0].grad += neg_grad-pos_grad
 
-                if disp_text: disp_losses.append(float(sum(inp-inp_neg)))
+                if disp_text: disp_losses.append(float(sum(abs(inp-inp_neg))))
             if disp_text: print(f'\tloss_{i}: {disp_losses}')
 
             model[0][0].grad /= (t+1)
             sgd(model) if config.optimizer == 'sgd' else adaptive_sgd(model)
+            # if disp_text: print(f'\tweight: {max(abs(model[0][0]))}, {mean(abs(model[0][0]))}')
 
 
     print('-- training L1 --')
@@ -103,10 +104,10 @@ def train_on(model, sequences, init_state=None):
         outs = prop_model(model, inps, layer=1)
 
         loss = lbls-outs
-        pos_grad = (transpose(inps.unsqueeze(1), 1, 2) * loss.unsqueeze(1)).sum(0)
-        model[1][0].grad = -pos_grad/(config.max_seq_len-1)
+        pos_grad = (transpose(inps.unsqueeze(1),1,2) * loss.unsqueeze(1)).sum(0)
+        model[1][0].grad = -pos_grad /(config.max_seq_len-1)
 
-        if disp_text: print(f'\tloss_{i}: {float(sum(loss))}')
+        if disp_text: print(f'\tloss_{i}: {float(sum(abs(loss)))}')
 
         sgd(model) if config.optimizer == 'sgd' else adaptive_sgd(model)
 
@@ -168,7 +169,6 @@ def adaptive_sgd(model, lr=None, batch_size=None,
                 for __, param in enumerate(layer):
                     if param.grad is not None:
 
-                        lr_ = lr
                         param.grad /= batch_size
 
                         if do_moments:
@@ -178,7 +178,7 @@ def adaptive_sgd(model, lr=None, batch_size=None,
                             variances[_][__] = alpha_variance * variances[_][__] + (1-alpha_variance) * param.grad**2
                             variance_hat = variances[_][__] / (1-alpha_variance**(ep_nr+1))
 
-                        param -= lr_ * (moment_hat if do_moments else param.grad) / ((sqrt(variance_hat)+epsilon) if do_variances else 1)
+                        param -= lr * (moment_hat if do_moments else param.grad) / ((sqrt(variance_hat)+epsilon) if do_variances else 1)
                         param.grad = None
 
 
